@@ -554,6 +554,233 @@ const fullName = `${firstName} ${lastName}`;
 const fullName = useMemo(() => `${firstName} ${lastName}`, [firstName, lastName]);
 ```
 
+##### Conditional Hook Calls (Critical)
+
+Hooks must be called in the same order on every render. Placing hooks inside conditionals, loops, or after early returns breaks React's internal tracking.
+
+```tsx
+// ❌ Bad - hook inside conditional
+function Profile({ userId }) {
+  if (!userId) {
+    return <div>Please log in</div>;
+  }
+  const [user, setUser] = useState(null); // Hook after early return!
+  useEffect(() => fetchUser(userId), [userId]);
+  return <div>{user?.name}</div>;
+}
+
+// ✅ Good - hooks before any conditionals
+function Profile({ userId }) {
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    if (userId) {
+      fetchUser(userId).then(setUser);
+    }
+  }, [userId]);
+
+  if (!userId) {
+    return <div>Please log in</div>;
+  }
+  return <div>{user?.name}</div>;
+}
+```
+
+##### Mutating State Directly (Critical)
+
+React state must be treated as immutable. Direct mutations (`.push()`, `.splice()`, `obj.prop = x`) won't trigger re-renders and cause stale UI.
+
+```tsx
+// ❌ Bad - mutating state directly
+const [items, setItems] = useState([]);
+const addItem = (item) => {
+  items.push(item); // Mutation!
+  setItems(items);  // Same reference, no re-render
+};
+
+const [user, setUser] = useState({ name: 'Alice', age: 30 });
+const updateAge = () => {
+  user.age = 31; // Mutation!
+  setUser(user);
+};
+
+// ✅ Good - create new references
+const addItem = (item) => {
+  setItems([...items, item]);
+};
+
+const updateAge = () => {
+  setUser({ ...user, age: 31 });
+};
+```
+
+##### Missing Hook Dependencies (Major)
+
+Variables used inside `useEffect`, `useCallback`, or `useMemo` must be listed in the dependency array to avoid stale closures.
+
+```tsx
+// ❌ Bad - missing dependency
+const [count, setCount] = useState(0);
+const [multiplier, setMultiplier] = useState(2);
+
+useEffect(() => {
+  console.log(count * multiplier); // multiplier used but not in deps
+}, [count]); // Missing: multiplier
+
+// ✅ Good - all dependencies listed
+useEffect(() => {
+  console.log(count * multiplier);
+}, [count, multiplier]);
+```
+
+##### Stale Closures in Callbacks (Major)
+
+Event handlers and callbacks passed to child components may capture outdated state values if not properly managed.
+
+```tsx
+// ❌ Bad - stale closure in interval
+function Counter() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      console.log(count); // Always logs initial value (0)
+      setCount(count + 1); // Always sets to 1
+    }, 1000);
+    return () => clearInterval(id);
+  }, []); // count captured at mount time
+}
+
+// ✅ Good - use functional update
+useEffect(() => {
+  const id = setInterval(() => {
+    setCount(c => c + 1); // Always has current value
+  }, 1000);
+  return () => clearInterval(id);
+}, []);
+
+// ✅ Also good - include in deps and re-create interval
+useEffect(() => {
+  const id = setInterval(() => {
+    setCount(count + 1);
+  }, 1000);
+  return () => clearInterval(id);
+}, [count]);
+```
+
+##### Functional setState for Derived Updates (Major)
+
+When the next state depends on the previous state, always use the functional form to avoid race conditions with batched updates.
+
+```tsx
+// ❌ Bad - may lose updates when batched
+const increment = () => setCount(count + 1);
+const incrementTwice = () => {
+  setCount(count + 1);
+  setCount(count + 1); // Both read same `count`, only increments by 1
+};
+
+// ✅ Good - functional updates always use latest state
+const increment = () => setCount(c => c + 1);
+const incrementTwice = () => {
+  setCount(c => c + 1);
+  setCount(c => c + 1); // Correctly increments by 2
+};
+```
+
+##### Async Updates After Unmount (Major)
+
+Async operations (fetch, timers) that update state after unmount cause memory leaks and "Can't perform state update on unmounted component" warnings. Use AbortController or cleanup flags.
+
+```tsx
+// ❌ Bad - no cleanup for async operation
+useEffect(() => {
+  fetch(`/api/user/${id}`)
+    .then(res => res.json())
+    .then(data => setUser(data)); // May run after unmount
+}, [id]);
+
+// ✅ Good - AbortController for fetch
+useEffect(() => {
+  const controller = new AbortController();
+  fetch(`/api/user/${id}`, { signal: controller.signal })
+    .then(res => res.json())
+    .then(data => setUser(data))
+    .catch(err => {
+      if (err.name !== 'AbortError') {
+        throw err;
+      }
+    });
+  return () => controller.abort();
+}, [id]);
+
+// ✅ Good - cleanup flag for other async
+useEffect(() => {
+  let cancelled = false;
+  fetchUser(id).then(data => {
+    if (!cancelled) {
+      setUser(data);
+    }
+  });
+  return () => { cancelled = true; };
+}, [id]);
+```
+
+##### Inline Objects Breaking Memoization (Minor)
+
+Inline object/array literals and arrow functions in JSX create new references on every render, breaking `React.memo` and causing unnecessary child re-renders.
+
+```tsx
+// ❌ Bad - new object/function on every render
+function Parent() {
+  return (
+    <Child
+      style={{ color: 'red' }}  // New object each render
+      onClick={() => doSomething()}  // New function each render
+      config={{ timeout: 5000 }}  // New object each render
+    />
+  );
+}
+
+// ✅ Good - stable references
+const childStyle = { color: 'red' };
+const childConfig = { timeout: 5000 };
+
+function Parent() {
+  const handleClick = useCallback(() => doSomething(), []);
+  return (
+    <Child
+      style={childStyle}
+      onClick={handleClick}
+      config={childConfig}
+    />
+  );
+}
+```
+
+##### Missing Form preventDefault (Minor)
+
+Form submissions without `e.preventDefault()` cause full page reloads in SPAs, losing application state.
+
+```tsx
+// ❌ Bad - page reloads on submit
+function LoginForm() {
+  const handleSubmit = (e) => {
+    // Missing e.preventDefault()
+    login(email, password);
+  };
+  return <form onSubmit={handleSubmit}>...</form>;
+}
+
+// ✅ Good - prevent default form behavior
+function LoginForm() {
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    login(email, password);
+  };
+  return <form onSubmit={handleSubmit}>...</form>;
+}
+```
+
 #### Python
 
 - Bare `except:` clauses swallowing errors
