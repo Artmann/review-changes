@@ -125,7 +125,7 @@ For each new or modified file containing business logic:
 
 - Check if corresponding test file exists
 - If tests exist, verify new code paths have coverage
-- Flag missing tests as **Major** if for critical paths, **Minor** otherwise
+- Flag missing tests for critical paths
 
 ### 6. Format Output
 
@@ -177,7 +177,7 @@ Adapt review focus based on detected language and framework.
 
 ### General Guidelines
 
-#### API & Breaking Changes (Major)
+#### API & Breaking Changes
 
 Flag changes that could break existing consumers:
 
@@ -197,7 +197,7 @@ function getUser(id: number): User
 function getUserById(id: string): User
 ```
 
-#### Authentication & Authorization (Critical)
+#### Authentication & Authorization
 
 Flag as **Critical** when security boundaries are weakened:
 
@@ -219,7 +219,7 @@ app.get('/api/users/:id/private-data', requireAuth, checkOwnership, (req, res) =
 });
 ```
 
-#### Database & Persistence (Major)
+#### Database & Persistence
 
 - **Missing transactions** for multi-step operations that should be atomic
 - **N+1 query patterns**: Fetching related data in loops instead of joins/eager loading
@@ -238,9 +238,9 @@ for (const user of users) {
 const users = await db.getUsersWithPosts();
 ```
 
-#### Concurrency (Critical/Major)
+#### Concurrency
 
-Flag as **Critical** for data corruption risks, **Major** for race conditions:
+Flag as **Critical** for data corruption risks:
 
 - **Shared mutable state** accessed from multiple threads without synchronization
 - **Missing locks/mutexes** when modifying shared resources
@@ -264,7 +264,7 @@ After any `await`, verify that assumptions made before the await are still valid
 
 ##### Post-Await State Validation
 
-Flag as **Major** when code returns success without verifying the expected outcome:
+Flag when code returns success without verifying the expected outcome:
 
 ```ts
 // ❌ Bad - assumes setup succeeded
@@ -280,7 +280,7 @@ if (!this.controllers.has(notebookKey)) {
 return true;
 ```
 
-#### External API Handling (Major)
+#### External API Handling
 
 - **Missing timeouts** on HTTP requests (can hang indefinitely)
 - **No retry logic** for transient failures (network blips, 503s)
@@ -301,7 +301,7 @@ const data = await fetchWithRetry(url, {
 });
 ```
 
-#### Edge Cases & Boundaries (Major)
+#### Edge Cases & Boundaries
 
 - **Empty collections**: Code assumes arrays/lists are non-empty
 - **Null/undefined handling**: Missing checks on optional values
@@ -317,7 +317,7 @@ const first = items[0].name;
 const first = items[0]?.name ?? 'default';
 ```
 
-#### Defensive Coding (Major)
+#### Defensive Coding
 
 - **Trusting external input**: Using data from APIs/users without validation
 - **Assuming success**: Not handling failure cases for operations that can fail
@@ -335,13 +335,13 @@ if (!userName) {
 }
 ```
 
-#### Input Sanitization (Critical/Major)
+#### Input Sanitization
 
 External data is untrusted. Any input from users, files, APIs, or environment must be sanitized before use in sensitive contexts.
 
-##### Command Injection (Critical)
+##### Command Injection
 
-Never pass unsanitized input to shell commands. Use argument arrays instead of string interpolation.
+Flag as **Critical**. Never pass unsanitized input to shell commands. Use argument arrays instead of string interpolation.
 
 ```ts
 // ❌ Bad - command injection vulnerability
@@ -362,9 +362,9 @@ if (!/^[a-zA-Z0-9_-]+$/.test(config)) {
 execFileSync('process', [config]);
 ```
 
-##### Path Traversal (Critical)
+##### Path Traversal
 
-User input in file paths can escape intended directories. Always validate and resolve paths.
+Flag as **Critical**. User input in file paths can escape intended directories. Always validate and resolve paths.
 
 ```ts
 // ❌ Bad - path traversal vulnerability
@@ -379,9 +379,9 @@ if (!filePath.startsWith(uploadsDir + path.sep)) {
 }
 ```
 
-##### XSS Prevention (Critical)
+##### XSS Prevention
 
-User input rendered as HTML can execute malicious scripts. Always escape or use safe APIs.
+Flag as **Critical**. User input rendered as HTML can execute malicious scripts. Always escape or use safe APIs.
 
 ```ts
 // ❌ Bad - XSS vulnerability
@@ -405,7 +405,7 @@ if (!['http:', 'https:'].includes(url.protocol)) {
 link.href = url.href;
 ```
 
-##### Log Injection (Major)
+##### Log Injection
 
 Unsanitized input in logs can forge entries or inject control characters.
 
@@ -421,9 +421,9 @@ logger.info('User logged in', { username: username.replace(/[\n\r]/g, '') });
 logger.info({ event: 'login', username }); // Let logger handle encoding
 ```
 
-##### SQL Injection (Critical)
+##### SQL Injection
 
-Never concatenate user input into queries. Use parameterized queries or prepared statements.
+Flag as **Critical**. Never concatenate user input into queries. Use parameterized queries or prepared statements.
 
 ```ts
 // ❌ Bad - SQL injection
@@ -437,7 +437,7 @@ db.query(query, [userName]);
 const user = await User.findOne({ where: { name: userName } });
 ```
 
-#### Memory & Performance (Major)
+#### Memory & Performance
 
 - **Unbounded collections**: Arrays/maps that grow without limits
 - **Memory leaks**: Event listeners not removed, closures holding references
@@ -461,7 +461,7 @@ const cache = new LRUCache({ maxSize: 1000 });
 
 #### File System Operations
 
-Flag these as **Major** issues:
+Flag these issues:
 
 - **Missing file existence checks**: Reading files without verifying they exist first
 - **Missing directory checks**: Writing files without ensuring parent directory exists
@@ -473,9 +473,9 @@ Look for patterns like:
 - `fs.writeFile(path)` without ensuring `path.dirname(path)` exists
 - `open()`, `fopen()`, `File.read()` etc. without existence validation
 
-#### Logging & Observability (Minor/Major)
+#### Logging & Observability
 
-Flag as **Major** if it hampers debugging production issues:
+Flag issues that hamper debugging production issues:
 
 - **Insufficient logging**: No logs for important operations, errors without context
 - **Excessive logging**: Verbose logs that create noise or performance issues
@@ -496,7 +496,7 @@ logger.error('Payment processing failed', {
 });
 ```
 
-#### Testing Quality (Major)
+#### Testing Quality
 
 - **Tests that don't assert anything meaningful**: Empty tests, assertions that always pass
 - **Missing edge case coverage**: Only happy path tested
@@ -519,9 +519,9 @@ it('should transform input data correctly', async () => {
 });
 ```
 
-#### Accessibility (Minor/Major)
+#### Accessibility
 
-Flag as **Major** for interactive elements, **Minor** for informational content:
+Flag accessibility issues:
 
 - **Missing alt text** on images
 - **Non-semantic HTML**: Using divs for buttons, missing form labels
@@ -573,7 +573,7 @@ function process(data) {
 }
 ```
 
-#### Error Messages (Major)
+#### Error Messages
 
 Flag error messages that fail to help users understand and resolve problems.
 
@@ -625,7 +625,7 @@ throw new UserFacingError(
 
 ##### Disposable Resources
 
-Flag as **Major** when objects with `dispose()` methods are created but never disposed:
+Flag when objects with `dispose()` methods are created but never disposed:
 
 - `CancellationTokenSource` - must call `dispose()` in finally block
 - `Disposable` subscriptions from event listeners
@@ -752,9 +752,9 @@ const fullName = `${firstName} ${lastName}`;
 const fullName = useMemo(() => `${firstName} ${lastName}`, [firstName, lastName]);
 ```
 
-##### Conditional Hook Calls (Critical)
+##### Conditional Hook Calls
 
-Hooks must be called in the same order on every render. Placing hooks inside conditionals, loops, or after early returns breaks React's internal tracking.
+Flag as **Critical**. Hooks must be called in the same order on every render. Placing hooks inside conditionals, loops, or after early returns breaks React's internal tracking.
 
 ```tsx
 // ❌ Bad - hook inside conditional
@@ -783,9 +783,9 @@ function Profile({ userId }) {
 }
 ```
 
-##### Mutating State Directly (Critical)
+##### Mutating State Directly
 
-React state must be treated as immutable. Direct mutations (`.push()`, `.splice()`, `obj.prop = x`) won't trigger re-renders and cause stale UI.
+Flag as **Critical**. React state must be treated as immutable. Direct mutations (`.push()`, `.splice()`, `obj.prop = x`) won't trigger re-renders and cause stale UI.
 
 ```tsx
 // ❌ Bad - mutating state directly
@@ -811,7 +811,7 @@ const updateAge = () => {
 };
 ```
 
-##### Missing Hook Dependencies (Major)
+##### Missing Hook Dependencies
 
 Variables used inside `useEffect`, `useCallback`, or `useMemo` must be listed in the dependency array to avoid stale closures.
 
@@ -830,7 +830,7 @@ useEffect(() => {
 }, [count, multiplier]);
 ```
 
-##### Stale Closures in Callbacks (Major)
+##### Stale Closures in Callbacks
 
 Event handlers and callbacks passed to child components may capture outdated state values if not properly managed.
 
@@ -865,7 +865,7 @@ useEffect(() => {
 }, [count]);
 ```
 
-##### Functional setState for Derived Updates (Major)
+##### Functional setState for Derived Updates
 
 When the next state depends on the previous state, always use the functional form to avoid race conditions with batched updates.
 
@@ -885,7 +885,7 @@ const incrementTwice = () => {
 };
 ```
 
-##### Async Updates After Unmount (Major)
+##### Async Updates After Unmount
 
 Async operations (fetch, timers) that update state after unmount cause memory leaks and "Can't perform state update on unmounted component" warnings. Use AbortController or cleanup flags.
 
@@ -923,7 +923,7 @@ useEffect(() => {
 }, [id]);
 ```
 
-##### Inline Objects Breaking Memoization (Minor)
+##### Inline Objects Breaking Memoization
 
 Inline object/array literals and arrow functions in JSX create new references on every render, breaking `React.memo` and causing unnecessary child re-renders.
 
@@ -955,7 +955,7 @@ function Parent() {
 }
 ```
 
-##### Missing Form preventDefault (Minor)
+##### Missing Form preventDefault
 
 Form submissions without `e.preventDefault()` cause full page reloads in SPAs, losing application state.
 
@@ -979,7 +979,7 @@ function LoginForm() {
 }
 ```
 
-##### Timer Cleanup in useEffect (Major)
+##### Timer Cleanup in useEffect
 
 Timers created in `useEffect` must be cleared in the cleanup function. Failing to do so causes memory leaks and state updates on unmounted components.
 
@@ -1030,9 +1030,9 @@ function Debounced() {
 }
 ```
 
-##### XSS and Unsafe HTML (Critical)
+##### XSS and Unsafe HTML
 
-React escapes content by default, but `dangerouslySetInnerHTML` bypasses this protection. Only use it with sanitized content.
+Flag as **Critical**. React escapes content by default, but `dangerouslySetInnerHTML` bypasses this protection. Only use it with sanitized content.
 
 ```tsx
 // ❌ Bad - XSS vulnerability
