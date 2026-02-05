@@ -335,6 +335,108 @@ if (!userName) {
 }
 ```
 
+#### Input Sanitization (Critical/Major)
+
+External data is untrusted. Any input from users, files, APIs, or environment must be sanitized before use in sensitive contexts.
+
+##### Command Injection (Critical)
+
+Never pass unsanitized input to shell commands. Use argument arrays instead of string interpolation.
+
+```ts
+// ❌ Bad - command injection vulnerability
+const output = execSync(`git log --author="${userInput}"`);
+
+// ✅ Good - use argument array (no shell interpolation)
+const output = execFileSync('git', ['log', `--author=${userInput}`]);
+
+// ❌ Bad - file content used in command
+const config = fs.readFileSync('config.txt', 'utf8');
+execSync(`process ${config}`); // config.txt could contain: "; rm -rf /"
+
+// ✅ Good - validate/sanitize file content first
+const config = fs.readFileSync('config.txt', 'utf8');
+if (!/^[a-zA-Z0-9_-]+$/.test(config)) {
+  throw new Error('Invalid config format');
+}
+execFileSync('process', [config]);
+```
+
+##### Path Traversal (Critical)
+
+User input in file paths can escape intended directories. Always validate and resolve paths.
+
+```ts
+// ❌ Bad - path traversal vulnerability
+const filePath = `./uploads/${userFilename}`;
+// userFilename could be: "../../../etc/passwd"
+
+// ✅ Good - resolve and validate path stays within allowed directory
+const uploadsDir = path.resolve('./uploads');
+const filePath = path.resolve(uploadsDir, userFilename);
+if (!filePath.startsWith(uploadsDir + path.sep)) {
+  throw new Error('Invalid file path');
+}
+```
+
+##### XSS Prevention (Critical)
+
+User input rendered as HTML can execute malicious scripts. Always escape or use safe APIs.
+
+```ts
+// ❌ Bad - XSS vulnerability
+element.innerHTML = `<p>Hello, ${userName}</p>`;
+
+// ✅ Good - use textContent for plain text
+element.textContent = `Hello, ${userName}`;
+
+// ✅ Good - escape if HTML structure needed
+import { escape } from 'lodash';
+element.innerHTML = `<p>Hello, ${escape(userName)}</p>`;
+
+// ❌ Bad - user input in URL without validation
+link.href = userProvidedUrl; // Could be: "javascript:alert('xss')"
+
+// ✅ Good - validate URL protocol
+const url = new URL(userProvidedUrl);
+if (!['http:', 'https:'].includes(url.protocol)) {
+  throw new Error('Invalid URL protocol');
+}
+link.href = url.href;
+```
+
+##### Log Injection (Major)
+
+Unsanitized input in logs can forge entries or inject control characters.
+
+```ts
+// ❌ Bad - log injection
+logger.info(`User logged in: ${username}`);
+// username could be: "admin\n[ERROR] System compromised"
+
+// ✅ Good - sanitize or use structured logging
+logger.info('User logged in', { username: username.replace(/[\n\r]/g, '') });
+
+// ✅ Better - structured logging with proper escaping
+logger.info({ event: 'login', username }); // Let logger handle encoding
+```
+
+##### SQL Injection (Critical)
+
+Never concatenate user input into queries. Use parameterized queries or prepared statements.
+
+```ts
+// ❌ Bad - SQL injection
+const query = `SELECT * FROM users WHERE name = '${userName}'`;
+
+// ✅ Good - parameterized query
+const query = 'SELECT * FROM users WHERE name = ?';
+db.query(query, [userName]);
+
+// ✅ Good - ORM with built-in escaping
+const user = await User.findOne({ where: { name: userName } });
+```
+
 #### Memory & Performance (Major)
 
 - **Unbounded collections**: Arrays/maps that grow without limits
@@ -471,6 +573,45 @@ function process(data) {
 }
 ```
 
+#### Error Messages (Major)
+
+Flag error messages that fail to help users understand and resolve problems.
+
+**Requirements for good error messages:**
+- **Actionable** - Tell users what to do, not just what went wrong
+- **Contextual** - Include what operation was attempted and relevant values
+- **Specific** - "An error occurred" is never helpful
+- **User-appropriate** - Don't expose stack traces or internal details to end users
+- **Include identifiers** - Order IDs, user IDs, etc. for debugging
+- **Error codes** - For programmatic handling and support tickets
+
+```ts
+// ❌ Bad - generic, not actionable
+throw new Error('An error occurred');
+throw new Error('Invalid input');
+throw new Error('Operation failed');
+
+// ✅ Good - specific, actionable, includes context
+throw new Error('Failed to save user profile: email "user@example.com" is already registered. Please use a different email address.');
+throw new Error(`Payment failed for order ${orderId}: card declined. Please check your card details or try a different payment method.`);
+throw new Error(`File upload failed: ${filename} exceeds the 10MB size limit. Please compress the file or upload a smaller one.`);
+```
+
+For API/system errors, wrap internal details appropriately:
+
+```ts
+// ❌ Bad - exposes internals, not helpful to users
+throw new Error('ECONNREFUSED 127.0.0.1:5432');
+throw new Error('NullPointerException at line 42');
+throw new Error(err.stack);
+
+// ✅ Good - user-friendly with error code for support
+throw new UserFacingError(
+  'Unable to save your changes. Please try again in a few moments.',
+  { code: 'DB_UNAVAILABLE', internal: err.message }
+);
+```
+
 ---
 
 ### Language/Framework-Specific Guidelines
@@ -531,6 +672,63 @@ const url = `/api/search?q=${query}&page=${page}`;
 // ✅ Good - URLSearchParams handles encoding
 const params = new URLSearchParams({ q: query, page: String(page) });
 const url = `/api/search?${params}`;
+```
+
+##### Timers and Intervals
+
+Always store timer IDs and clear them on cleanup. Uncleaned timers cause memory leaks and unexpected behavior.
+
+```ts
+// ❌ Bad - timer never cleared
+function startPolling() {
+  setInterval(() => fetchData(), 5000);
+}
+
+// ✅ Good - return cleanup function
+function startPolling() {
+  const id = setInterval(() => fetchData(), 5000);
+  return () => clearInterval(id);
+}
+
+// ❌ Bad - setTimeout in loop without tracking
+for (let i = 0; i < 5; i++) {
+  setTimeout(() => process(i), i * 1000);
+}
+
+// ✅ Good - track all timer IDs for cleanup
+const timers = [];
+for (let i = 0; i < 5; i++) {
+  timers.push(setTimeout(() => process(i), i * 1000));
+}
+// Later: timers.forEach(clearTimeout);
+```
+
+For precise timing, prefer recursive `setTimeout` over `setInterval`. Intervals can drift and stack if callbacks take longer than the interval:
+
+```ts
+// ⚠️ setInterval can drift and stack callbacks
+setInterval(async () => {
+  await slowOperation(); // If this takes >1000ms, callbacks stack
+}, 1000);
+
+// ✅ Recursive setTimeout waits for completion
+function poll() {
+  setTimeout(async () => {
+    await slowOperation();
+    poll(); // Schedule next only after completion
+  }, 1000);
+}
+```
+
+In Node.js, use `unref()` for background timers that shouldn't keep the process alive:
+
+```ts
+// Node.js: timer keeps process alive
+const id = setInterval(checkHealth, 30000);
+
+// Node.js: timer won't prevent process exit
+const id = setInterval(checkHealth, 30000);
+id.unref();
 ```
 
 #### React
@@ -778,6 +976,100 @@ function LoginForm() {
     login(email, password);
   };
   return <form onSubmit={handleSubmit}>...</form>;
+}
+```
+
+##### Timer Cleanup in useEffect (Major)
+
+Timers created in `useEffect` must be cleared in the cleanup function. Failing to do so causes memory leaks and state updates on unmounted components.
+
+```tsx
+// ❌ Bad - timer not cleared
+useEffect(() => {
+  setTimeout(() => setStatus('ready'), 1000);
+  setInterval(() => setCount(c => c + 1), 1000);
+}, []);
+
+// ✅ Good - cleanup both timers
+useEffect(() => {
+  const timeout = setTimeout(() => setStatus('ready'), 1000);
+  const interval = setInterval(() => setCount(c => c + 1), 1000);
+  return () => {
+    clearTimeout(timeout);
+    clearInterval(interval);
+  };
+}, []);
+```
+
+For timers that need to be cleared from event handlers, store the ID in a ref:
+
+```tsx
+// ❌ Bad - can't clear timer from handler
+function Debounced() {
+  useEffect(() => {
+    // How do we clear this from onClick?
+  }, []);
+
+  const handleClick = () => {
+    setTimeout(() => save(), 500); // Creates new timer each click
+  };
+}
+
+// ✅ Good - ref holds timer ID
+function Debounced() {
+  const timerRef = useRef<NodeJS.Timeout>();
+
+  const handleClick = () => {
+    clearTimeout(timerRef.current); // Clear previous
+    timerRef.current = setTimeout(() => save(), 500);
+  };
+
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current);
+  }, []);
+}
+```
+
+##### XSS and Unsafe HTML (Critical)
+
+React escapes content by default, but `dangerouslySetInnerHTML` bypasses this protection. Only use it with sanitized content.
+
+```tsx
+// ❌ Bad - XSS vulnerability
+function Comment({ text }) {
+  return <div dangerouslySetInnerHTML={{ __html: text }} />;
+}
+
+// ✅ Good - use a sanitizer library
+import DOMPurify from 'dompurify';
+
+function Comment({ text }) {
+  return <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(text) }} />;
+}
+
+// ✅ Better - render as plain text when possible
+function Comment({ text }) {
+  return <div>{text}</div>; // React escapes automatically
+}
+```
+
+User-controlled URLs in `href` or `src` attributes can execute JavaScript:
+
+```tsx
+// ❌ Bad - javascript: URLs execute code
+<a href={userUrl}>Click here</a>
+
+// ✅ Good - validate protocol
+function SafeLink({ url, children }) {
+  const safeUrl = useMemo(() => {
+    try {
+      const parsed = new URL(url);
+      return ['http:', 'https:'].includes(parsed.protocol) ? url : '#';
+    } catch {
+      return '#';
+    }
+  }, [url]);
+  return <a href={safeUrl}>{children}</a>;
 }
 ```
 
