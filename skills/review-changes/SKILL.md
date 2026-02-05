@@ -13,7 +13,16 @@ Review code changes in a feature branch and identify issues before merging.
 
 ## Workflow
 
-### 1. Detect Branches
+### 1. Determine Review Target
+
+- **Remote PR**: If user provides PR number or URL (e.g., "review PR #123", "review https://github.com/org/repo/pull/123"):
+  1. Checkout the PR: `gh pr checkout <PR_NUMBER>`
+  2. Read PR context: `gh pr view <PR_NUMBER> --json title,body,comments`
+  3. Use the PR description and comments as additional context for the review
+
+- **Local Changes**: If no PR specified, review current branch against default branch (continue to step 2)
+
+### 2. Detect Branches
 
 ```bash
 # Get current branch
@@ -23,7 +32,7 @@ git branch --show-current
 git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main"
 ```
 
-### 2. Get Changed Files
+### 3. Get Changed Files
 
 ```bash
 # List files changed between default branch and current branch
@@ -33,7 +42,7 @@ git diff --name-only <default-branch>...HEAD
 git diff <default-branch>...HEAD
 ```
 
-### 3. Analyze Changes
+### 4. Analyze Changes
 
 Read each changed file and review for issues. Adapt review criteria to the detected language.
 
@@ -110,7 +119,7 @@ Won't break anything but would improve the code.
 - **Code duplication**: Near-identical code blocks that should be extracted to a helper function
 - **TODO/FIXME**: Unresolved todos that should be addressed
 
-### 4. Check Test Coverage
+### 5. Check Test Coverage
 
 For each new or modified file containing business logic:
 
@@ -118,7 +127,7 @@ For each new or modified file containing business logic:
 - If tests exist, verify new code paths have coverage
 - Flag missing tests as **Major** if for critical paths, **Minor** otherwise
 
-### 5. Format Output
+### 6. Format Output
 
 Present findings grouped by severity, ordered Critical → Major → Minor.
 
@@ -152,6 +161,13 @@ Present findings grouped by severity, ordered Critical → Major → Minor.
 ```
 
 If no issues found in a category, omit that section. End with clear merge recommendation.
+
+#### Feedback Tone
+
+- Be constructive and professional—explain *why* a change is needed, not just what to change
+- Provide actionable suggestions: instead of "this is wrong", say "consider X because Y"
+- For approvals, acknowledge the specific value of the contribution (e.g., "Good use of early returns for readability")
+- When flagging issues, assume positive intent—the author may not have been aware of the concern
 
 ## Things to look for
 
