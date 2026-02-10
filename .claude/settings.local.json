@@ -9,7 +9,10 @@
       "mcp__github__get_file_contents",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(awk:*)",
+      "WebSearch",
+      "Bash(wc:*)"
     ]
   }
 }
